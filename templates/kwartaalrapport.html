@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0"><i class="bi bi-file-earmark-text me-2"></i>Kwartaalrapport voor boekhouder</h5>
+  <div class="d-flex gap-2">
+    <form method="get" class="d-flex gap-2">
+      <select name="kwartaal" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto">
+        {% for kw in all_kw %}
+        <option value="{{ kw }}" {% if kw_sel==kw %}selected{% endif %}>{{ kw }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if rapport %}
+    <a href="/kwartaalrapport/export/{{ rapport.kwartaal }}" class="btn btn-sm btn-success">
+      <i class="bi bi-download me-1"></i> Download .txt
+    </a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="copyRapport()">
+      <i class="bi bi-clipboard me-1"></i> Kopieer
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if rapport %}
+
+<!-- Samenvatting kaarten -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100" style="background:#d1e7dd">
+      <div class="card-body py-3 text-center">
+        <div class="text-muted small fw-semibold mb-1">INKOMSTEN (netto)</div>
+        <div class="fw-bold fs-5">€ {{ "%.2f"|format(rapport.tot_inkomsten) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100" style="background:#f8d7da">
+      <div class="card-body py-3 text-center">
+        <div class="text-muted small fw-semibold mb-1">KOSTEN (netto)</div>
+        <div class="fw-bold fs-5">€ {{ "%.2f"|format(rapport.tot_kosten) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100" style="background:#cff4fc">
+      <div class="card-body py-3 text-center">
+        <div class="text-muted small fw-semibold mb-1">RESULTAAT</div>
+        <div class="fw-bold fs-5 {{ 'text-success' if rapport.resultaat >= 0 else 'text-danger' }}">
+          € {{ "%.2f"|format(rapport.resultaat) }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100" style="background:#fff3cd">
+      <div class="card-body py-3 text-center">
+        <div class="text-muted small fw-semibold mb-1">BTW SALDO</div>
+        <div class="fw-bold fs-5">€ {{ "%.2f"|format(rapport.btw_te_betalen) }}</div>
+        <div class="small text-muted">te betalen</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Rapport voor boekhouder (kopieerbaar) -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold">Overzicht per grootboekrekening — voor de boekhouder</span>
+    <span class="text-muted small">Kopieer dit en stuur het naar je boekhouder</span>
+  </div>
+  <div class="card-body p-0">
+    <pre id="rapport-tekst" class="p-3 mb-0" style="font-size:.82rem; white-space:pre-wrap; background:#fafafa; border-radius:0 0 8px 8px">KWARTAALRAPPORT {{ rapport.kwartaal }}
+Gegenereerd op: {{ now }}
+======================================================================
+
+{% for label, tp_key in [('INKOMSTEN', 'inkomsten'), ('KOSTEN', 'kosten'), ('PRIVÉ', 'prive'), ('OVERIG', 'nvt')] %}
+{% set items = rapport.per_rek.items() | selectattr('0.2', 'equalto', tp_key) | list %}
+{% if items %}── {{ label }} ──────────────────────────────────────────────────
+{% for (code, naam, _), v in items | sort(attribute='0.0') %}  {{ code }}  {{ "%-32s"|format(naam) }}  Netto: € {{ "%10.2f"|format(v.netto) }}   BTW: € {{ "%8.2f"|format(v.btw) }}
+{% endfor %}
+{% endif %}{% endfor %}======================================================================
+TOTAAL INKOMSTEN (excl. BTW):  €  {{ "%10.2f"|format(rapport.tot_inkomsten) }}
+TOTAAL KOSTEN    (excl. BTW):  €  {{ "%10.2f"|format(rapport.tot_kosten) }}
+RESULTAAT:                     €  {{ "%10.2f"|format(rapport.resultaat) }}
+
+── BTW OVERZICHT ──────────────────────────────────────────────────
+  BTW over omzet (ontvangen):      €  {{ "%8.2f"|format(rapport.btw_omzet) }}
+  BTW over kosten (te verrekenen): €  {{ "%8.2f"|format(rapport.btw_kosten) }}
+  SALDO BTW (te betalen):          €  {{ "%8.2f"|format(rapport.btw_te_betalen) }}
+
+── DETAILS PER TRANSACTIE ─────────────────────────────────────────
+{{ "%-12s"|format("Datum") }} {{ "%-38s"|format("Omschrijving") }} {{ "%10s"|format("Bedrag") }}  {{ "%-34s"|format("Rekening") }} {{ "%4s"|format("BTW%") }}  {{ "%8s"|format("BTW €") }}
+{{ "-" * 112 }}
+{% for t in rapport.alle_trans %}{% set n, b = netto_btw(t.bedrag, t.btw_waarde) %}{{ "%-12s"|format(t.datum) }} {{ "%-38s"|format((t.omschrijving or '')[:37]) }} € {{ "%8.2f"|format(t.bedrag) }}  {{ "%-34s"|format(t.code ~ " " ~ t.naam[:27]) }} {{ "%-22s"|format(btw_label(t.btw_waarde))}}  € {{ "%6.2f"|format(b) }}
+{% endfor %}
+Totaal {{ rapport.alle_trans|length }} transacties.</pre>
+  </div>
+</div>
+
+{% elif all_kw %}
+<div class="alert alert-warning">Geen geboekte transacties voor dit kwartaal.</div>
+{% else %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle me-1"></i>
+  Nog geen geboekte transacties. Importeer eerst een bankafschrift en boek de transacties af.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyRapport() {
+  const el = document.getElementById('rapport-tekst');
+  navigator.clipboard.writeText(el.innerText).then(() => {
+    const btn = event.target.closest('button');
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Gekopieerd!';
+    btn.classList.replace('btn-outline-secondary', 'btn-success');
+    setTimeout(() => {
+      btn.innerHTML = '<i class="bi bi-clipboard me-1"></i> Kopieer';
+      btn.classList.replace('btn-success', 'btn-outline-secondary');
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

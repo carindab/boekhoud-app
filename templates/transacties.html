@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Header + importknop -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-list-ul me-2"></i>Transacties</h5>
+  </div>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">
+    <i class="bi bi-upload me-1"></i> Bankafschrift importeren
+  </button>
+</div>
+
+<!-- Stats -->
+<div class="row g-2 mb-3">
+  <div class="col-auto">
+    <div class="card stat-card border-0 shadow-sm" style="background:#fff3cd">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+        <i class="bi bi-hourglass-split text-warning fs-5"></i>
+        <div>
+          <div class="fw-bold">{{ stats.onvolledig }}</div>
+          <div class="text-muted" style="font-size:.75rem">Nog af te boeken</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card stat-card border-0 shadow-sm" style="background:#d1e7dd">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        <div>
+          <div class="fw-bold">{{ stats.geboekt }}</div>
+          <div class="text-muted" style="font-size:.75rem">Geboekt</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter bar -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body py-2">
+    <form class="row g-2 align-items-center" method="get">
+      <div class="col-auto">
+        <select name="filter" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="onvolledig" {% if filter_mode=='onvolledig' %}selected{% endif %}>⏳ Nog af te boeken</option>
+          <option value="geboekt"    {% if filter_mode=='geboekt'    %}selected{% endif %}>✅ Geboekt</option>
+          <option value="alle"       {% if filter_mode=='alle'       %}selected{% endif %}>📋 Alle transacties</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <select name="kwartaal" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">Alle kwartalen</option>
+          {% for kw in all_kw %}
+          <option value="{{ kw }}" {% if kw_filter==kw %}selected{% endif %}>{{ kw }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto text-muted small">{{ transacties|length }} transacties</div>
+    </form>
+  </div>
+</div>
+
+<!-- Transacties tabel -->
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th style="width:100px">Datum</th>
+          <th>Omschrijving</th>
+          <th class="text-end" style="width:110px">Bedrag</th>
+          <th style="width:220px">Grootboek</th>
+          <th style="width:60px">BTW</th>
+          <th style="width:60px">Doc</th>
+          <th style="width:80px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in transacties %}
+        <tr class="{% if t.geboekt %}text-muted{% endif %}">
+          <td class="small text-nowrap">{{ t.datum }}</td>
+          <td>
+            <div>{{ t.omschrijving or '—' }}</div>
+            {% if t.tegenrekening %}
+              <div class="text-muted" style="font-size:.72rem">{{ t.tegenrekening }}</div>
+            {% endif %}
+            {% if t.notitie %}
+              <div class="text-primary" style="font-size:.72rem"><i class="bi bi-chat-text-fill"></i> {{ t.notitie }}</div>
+            {% endif %}
+          </td>
+          <td class="text-end text-nowrap">
+            <span class="{{ 'bedrag-bij' if t.bedrag > 0 else 'bedrag-af' }}">
+              € {{ "%.2f"|format(t.bedrag) }}
+            </span>
+          </td>
+          <td>
+            {% if t.geboekt and t.rek_naam %}
+              <span class="type-{{ t.rek_type }}">{{ t.rek_code }} {{ t.rek_naam }}</span>
+            {% else %}
+              <span class="text-danger small"><i class="bi bi-exclamation-circle"></i> Niet geboekt</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if t.btw_waarde and t.btw_waarde != '0' %}
+              <span class="badge bg-secondary">{{ btw_label(t.btw_waarde) }}</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if t.factuur %}
+              <a href="/uploads/{{ t.factuur }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Factuur bekijken">
+                <i class="bi bi-paperclip"></i>
+              </a>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                    onclick="toggleBoek({{ t.id }})" title="Afboeken">
+              <i class="bi bi-pencil-fill"></i>
+            </button>
+            <form method="post" action="/verwijder/{{ t.id }}" style="display:inline"
+                  onsubmit="return confirm('Weet je zeker dat je deze transactie wilt verwijderen?')">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Verwijderen">
+                <i class="bi bi-trash-fill"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+
+        <!-- Boekingsformulier (verborgen) -->
+        <tr id="boek-{{ t.id }}" class="boek-row" style="display:none">
+          <td colspan="7" class="py-2 px-3">
+            <form method="post" action="/boek/{{ t.id }}" enctype="multipart/form-data">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                  <label class="form-label small fw-semibold mb-1">Grootboekrekening *</label>
+                  <select name="rekening_id" class="form-select form-select-sm"
+                          id="rek-sel-{{ t.id }}" onchange="autoFillBtw({{ t.id }})">
+                    <option value="">— Kies rekening —</option>
+                    {% for r in rekeningen %}
+                    <option value="{{ r.id }}" data-btw="{{ r.btw_waarde }}"
+                            {% if t.rekening_id == r.id %}selected{% endif %}>
+                      {{ r.code }} {{ r.naam }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label small fw-semibold mb-1">BTW-code</label>
+                  <select name="btw_waarde" class="form-select form-select-sm" id="btw-sel-{{ t.id }}">
+                    {% for v, l in btw_opties %}
+                    <option value="{{ v }}" {% if (t.btw_waarde or '0') == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-semibold mb-1">Factuur / bon uploaden</label>
+                  <input type="file" name="factuur" class="form-control form-control-sm"
+                         accept=".pdf,.jpg,.jpeg,.png,.heic">
+                  {% if t.factuur %}
+                    <div class="small text-success mt-1"><i class="bi bi-check-circle"></i> Al een document aanwezig</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label small fw-semibold mb-1">Notitie</label>
+                  <input type="text" name="notitie" class="form-control form-control-sm"
+                         value="{{ t.notitie or '' }}" placeholder="Optioneel">
+                </div>
+                <div class="col-md-1">
+                  <button type="submit" class="btn btn-sm btn-success w-100">
+                    <i class="bi bi-check-lg"></i> Sla op
+                  </button>
+                </div>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+            Geen transacties gevonden.<br>
+            <button class="btn btn-primary btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#importModal">
+              Bankafschrift importeren
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Bankafschrift importeren</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/importeer" enctype="multipart/form-data">
+        <div class="modal-body">
+          <p class="text-muted small mb-3">
+            Ondersteunde banken: <strong>ING</strong>, <strong>Rabobank</strong>, <strong>ABN AMRO</strong><br>
+            Exporteer je bankafschrift als CSV vanuit je bankieren-app en upload het hier.
+          </p>
+          <input type="file" name="bestand" class="form-control" accept=".csv,.txt" required>
+          <div class="form-text">Duplicaten worden automatisch overgeslagen.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-upload me-1"></i>Importeren</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleBoek(id) {
+  const row = document.getElementById('boek-' + id);
+  row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+}
+
+function autoFillBtw(id) {
+  const sel = document.getElementById('rek-sel-' + id);
+  const btwSel = document.getElementById('btw-sel-' + id);
+  const opt = sel.options[sel.selectedIndex];
+  if (opt && opt.dataset.btw !== undefined) {
+    btwSel.value = opt.dataset.btw;
+  }
+}
+</script>
+{% endblock %}

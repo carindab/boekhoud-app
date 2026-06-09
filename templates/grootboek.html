@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0"><i class="bi bi-journal-text me-2"></i>Grootboekrekeningen</h5>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addModal">
+    <i class="bi bi-plus-lg"></i> Toevoegen
+  </button>
+</div>
+
+{% for type_label, type_key, bg in [
+  ('Omzet', 'omzet', '#d1e7dd'),
+  ('Kosten', 'kosten', '#f8d7da'),
+  ('Activa', 'activa', '#cff4fc'),
+  ('Passiva', 'passiva', '#e2d9f3'),
+  ('Privé', 'prive', '#fff3cd'),
+  ('Overig / n.v.t.', 'nvt', '#e2e3e5')
+] %}
+{% set groep = rekeningen | selectattr('type', 'equalto', type_key) | list %}
+{% if groep %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header fw-semibold py-2 d-flex align-items-center gap-2" style="background:{{ bg }}">
+    <span class="type-{{ type_key }}">{{ type_label }}</span>
+    <span class="text-muted small fw-normal">{{ groep|length }} rekeningen</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th style="width:80px">Code</th>
+          <th>Naam</th>
+          <th>Standaard BTW-code</th>
+          <th style="width:100px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in groep | sort(attribute='code') %}
+        <tr>
+          <td class="fw-semibold text-muted">{{ r.code }}</td>
+          <td>{{ r.naam }}</td>
+          <td>
+            <span class="text-muted small">{{ btw_label(r.btw_waarde) }}</span>
+          </td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                    onclick="toggleEdit({{ r.id }})" title="Bewerken">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <form method="post" action="/grootboek/verwijder/{{ r.id }}" style="display:inline"
+                  onsubmit="return confirm('Rekening verwijderen?')">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Verwijderen">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        <tr id="edit-{{ r.id }}" style="display:none; background:#f8f9fa">
+          <td colspan="4" class="py-2 px-3">
+            <form method="post" action="/grootboek/bewerken/{{ r.id }}" class="row g-2 align-items-end">
+              <div class="col-md-5">
+                <label class="form-label small fw-semibold mb-1">Naam</label>
+                <input type="text" name="naam" class="form-control form-control-sm" value="{{ r.naam }}" required>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label small fw-semibold mb-1">Standaard BTW-code</label>
+                <select name="btw_waarde" class="form-select form-select-sm">
+                  {% for v, l in btw_opties %}
+                  <option value="{{ v }}" {% if r.btw_waarde == v %}selected{% endif %}>{{ l }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-success">Opslaan</button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="toggleEdit({{ r.id }})">✕</button>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+<!-- Toevoegen Modal (zoals MoneyMonk) -->
+<div class="modal fade" id="addModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold">Nieuwe grootboekrekening</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/grootboek/toevoegen">
+        <div class="modal-body pt-3">
+          <div class="row g-3">
+
+            <!-- Naam -->
+            <div class="col-12">
+              <div class="row align-items-center">
+                <div class="col-4 fw-semibold">Naam</div>
+                <div class="col-8">
+                  <input type="text" name="naam" class="form-control" required autofocus>
+                </div>
+              </div>
+            </div>
+
+            <!-- Code -->
+            <div class="col-12">
+              <div class="row align-items-center">
+                <div class="col-4 fw-semibold">Code</div>
+                <div class="col-8">
+                  <input type="text" name="code" class="form-control" required placeholder="bv. 4200">
+                </div>
+              </div>
+            </div>
+
+            <!-- Categorie -->
+            <div class="col-12">
+              <div class="row align-items-center">
+                <div class="col-4 fw-semibold">Categorie <span class="text-muted fw-normal">?</span></div>
+                <div class="col-8">
+                  <select name="type" class="form-select" id="catSelect">
+                    <option value="omzet">Omzet</option>
+                    <option value="kosten">Kosten</option>
+                    <option value="activa">Activa</option>
+                    <option value="passiva">Passiva</option>
+                    <option value="prive">Privé</option>
+                    <option value="nvt">Overig / n.v.t.</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Standaard BTW-code -->
+            <div class="col-12">
+              <div class="row align-items-center">
+                <div class="col-4 fw-semibold">Standaard btw-code <span class="text-muted fw-normal">?</span></div>
+                <div class="col-8">
+                  <select name="btw_waarde" class="form-select">
+                    {% for v, l in btw_opties %}
+                    <option value="{{ v }}">{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-link text-decoration-none text-muted" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-primary px-4">Opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleEdit(id) {
+  const row = document.getElementById('edit-' + id);
+  row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+}
+</script>
+{% endblock %}

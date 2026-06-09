@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Registreren — Boekhouding</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; display: flex; align-items: center; }
+    .card { border: none; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  </style>
+</head>
+<body>
+<div class="container" style="max-width: 460px">
+  <div class="text-center mb-4">
+    <i class="bi bi-calculator-fill text-white fs-1"></i>
+    <h4 class="text-white fw-bold mt-2">Boekhouding</h4>
+  </div>
+  <div class="card">
+    <div class="card-body p-4">
+      <h5 class="fw-bold mb-4">Account aanmaken</h5>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} py-2 small">{{ msg }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Jouw naam</label>
+          <input type="text" name="naam" class="form-control" required autofocus placeholder="Voor- en achternaam">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Bedrijfsnaam</label>
+          <input type="text" name="bedrijfsnaam" class="form-control" placeholder="Optioneel">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">E-mailadres</label>
+          <input type="email" name="email" class="form-control" required placeholder="jouw@email.nl">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Wachtwoord</label>
+          <input type="password" name="wachtwoord" class="form-control" required
+                 placeholder="Minimaal 8 tekens">
+        </div>
+        <div class="mb-4">
+          <label class="form-label fw-semibold">Wachtwoord herhalen</label>
+          <input type="password" name="wachtwoord2" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 fw-semibold">
+          <i class="bi bi-person-plus me-1"></i> Account aanmaken
+        </button>
+      </form>
+      <hr>
+      <p class="text-center text-muted small mb-0">
+        Al een account? <a href="/login" class="text-decoration-none">Inloggen</a>
+      </p>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

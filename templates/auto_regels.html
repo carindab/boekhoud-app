@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="fw-bold mb-0"><i class="bi bi-lightning-fill me-2"></i>Automatische boekingsregels</h5>
+    <p class="text-muted small mb-0">Als een omschrijving de zoekterm bevat, wordt de transactie automatisch afgeboekt bij het importeren.</p>
+  </div>
+</div>
+
+<!-- Huidige regels -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Als omschrijving bevat…</th>
+          <th>Dan afboeken op</th>
+          <th style="width:80px">BTW %</th>
+          <th style="width:80px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in regels %}
+        <tr>
+          <td>
+            <span class="badge bg-light text-dark border" style="font-size:.85rem; font-family:monospace">
+              {{ r.zoekterm }}
+            </span>
+          </td>
+          <td><span class="type-kosten">{{ r.code }} {{ r.naam }}</span></td>
+          <td class="text-center">
+            {% if r.btw_waarde and r.btw_waarde != '0' %}
+              <span class="badge bg-secondary">{{ btw_label(r.btw_waarde) }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <form method="post" action="/auto-regels/verwijder/{{ r.id }}"
+                  onsubmit="return confirm('Regel verwijderen?')">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="text-center text-muted py-4">
+            <i class="bi bi-lightning fs-2 d-block mb-2"></i>
+            Nog geen auto-regels ingesteld.<br>
+            <span class="small">Voeg hieronder een regel toe.</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Nieuwe regel toevoegen -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header fw-semibold py-2 bg-light">
+    <i class="bi bi-plus-circle me-1"></i> Nieuwe regel toevoegen
+  </div>
+  <div class="card-body">
+    <form method="post" action="/auto-regels/toevoegen">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Zoekterm in omschrijving</label>
+          <input type="text" name="zoekterm" class="form-control" required
+                 placeholder="bv. Spotify, KPN, Hetzner...">
+          <div class="form-text">Niet hoofdlettergevoelig.</div>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">Afboeken op rekening</label>
+          <select name="rekening_id" class="form-select" required>
+            <option value="">— Kies grootboekrekening —</option>
+            {% for r in rekeningen %}
+            <option value="{{ r.id }}">{{ r.code }} {{ r.naam }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold">BTW-code</label>
+          <select name="btw_waarde" class="form-select">
+            {% for v, l in btw_opties %}
+            <option value="{{ v }}">{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-1">
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-plus-lg"></i>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="alert alert-info mt-3 py-2 small">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>Tip:</strong> Auto-regels worden toegepast bij het importeren van een nieuw bankafschrift.
+  Bestaande transacties worden niet opnieuw verwerkt.
+</div>
+{% endblock %}

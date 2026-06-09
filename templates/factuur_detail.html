@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Actiebalk -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <a href="/facturen" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i> Terug
+    </a>
+    <h5 class="fw-bold mb-0 ms-1">{{ f.factuurnummer }}</h5>
+    {% if f.status == 'concept' %}
+      <span class="badge bg-secondary">Concept</span>
+    {% elif f.status == 'vastgelegd' %}
+      <span class="badge bg-warning text-dark">Openstaand</span>
+    {% elif f.status == 'betaald' %}
+      <span class="badge bg-success">Betaald</span>
+    {% endif %}
+  </div>
+  <div class="d-flex gap-2">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i> Afdrukken / PDF
+    </button>
+    <a href="/facturen/{{ f.id }}/bewerken" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil me-1"></i> Bewerken
+    </a>
+    {% if f.status == 'concept' %}
+    <form method="post" action="/facturen/{{ f.id }}/status" style="display:inline">
+      <input type="hidden" name="status" value="vastgelegd">
+      <button type="submit" class="btn btn-sm btn-primary">
+        <i class="bi bi-check-lg me-1"></i> Vastleggen
+      </button>
+    </form>
+    {% elif f.status == 'vastgelegd' %}
+    <form method="post" action="/facturen/{{ f.id }}/status" style="display:inline">
+      <input type="hidden" name="status" value="betaald">
+      <button type="submit" class="btn btn-sm btn-success">
+        <i class="bi bi-cash me-1"></i> Markeer als betaald
+      </button>
+    </form>
+    {% elif f.status == 'betaald' %}
+    <form method="post" action="/facturen/{{ f.id }}/status" style="display:inline">
+      <input type="hidden" name="status" value="vastgelegd">
+      <button type="submit" class="btn btn-sm btn-outline-warning">
+        <i class="bi bi-arrow-counterclockwise me-1"></i> Zet terug naar openstaand
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Printbaar factuurblad -->
+<div class="card border-0 shadow-sm" id="printBlad">
+  <div class="card-body p-5">
+
+    <!-- Koptekst: eigen bedrijf + klant -->
+    <div class="row mb-5">
+      <div class="col-md-6">
+        <div class="fw-bold fs-5 mb-1">{{ session.get('bedrijfsnaam') or session.get('naam') }}</div>
+        <div class="text-muted small">{{ session.get('naam') }}</div>
+      </div>
+      <div class="col-md-6 text-md-end">
+        <div class="fw-bold mb-1">Factuur</div>
+        <div class="text-muted small">Nummer: <strong class="text-dark">{{ f.factuurnummer }}</strong></div>
+        <div class="text-muted small">Datum: {{ f.factuurdatum }}</div>
+        {% if f.vervaldatum %}
+        <div class="text-muted small">Vervaldatum: {{ f.vervaldatum }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Klantgegevens -->
+    {% if f.klant_naam %}
+    <div class="mb-4">
+      <div class="text-muted small fw-semibold text-uppercase mb-1" style="letter-spacing:.05em">Factuur aan</div>
+      <div class="fw-semibold">{{ f.klant_naam }}</div>
+      {% if f.adres %}<div class="small">{{ f.adres }}</div>{% endif %}
+      {% if f.postcode or f.stad %}<div class="small">{{ f.postcode }} {{ f.stad }}</div>{% endif %}
+      {% if f.klant_btw %}<div class="small text-muted">BTW: {{ f.klant_btw }}</div>{% endif %}
+      {% if f.klant_kvk %}<div class="small text-muted">KvK: {{ f.klant_kvk }}</div>{% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Regelitems tabel -->
+    <table class="table mb-0" style="border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom: 2px solid #dee2e6">
+          <th class="pb-2 ps-0">Omschrijving</th>
+          <th class="pb-2 text-center" style="width:80px">Aantal</th>
+          <th class="pb-2 text-end" style="width:120px">Prijs</th>
+          <th class="pb-2 text-end" style="width:60px">BTW</th>
+          <th class="pb-2 text-end pe-0" style="width:120px">Bedrag</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in regels %}
+        {% set n = r.aantal or 1 %}
+        {% set p = r.eenheidsprijs or 0 %}
+        {% set pct = btw_pct_van(r.btw_waarde) %}
+        {% if f.bedragen_excl %}
+          {% set excl = n * p %}
+          {% set btw_b = excl * pct / 100 %}
+        {% else %}
+          {% set inc = n * p %}
+          {% set excl = (inc / (1 + pct / 100)) if pct else inc %}
+          {% set btw_b = inc - excl %}
+        {% endif %}
+        <tr style="border-bottom: 1px solid #f0f0f0">
+          <td class="py-2 ps-0">
+            <div>{{ r.omschrijving or '—' }}</div>
+            {% if r.rek_naam %}<div class="text-muted small">{{ r.rek_naam }}</div>{% endif %}
+          </td>
+          <td class="py-2 text-center">{{ '%g'|format(n) }}</td>
+          <td class="py-2 text-end">€ {{ '%.2f'|format(p)|replace('.', ',') }}</td>
+          <td class="py-2 text-end text-muted small">{{ pct|int }}%</td>
+          <td class="py-2 text-end pe-0 fw-semibold">€ {{ '%.2f'|format(excl + btw_b if not f.bedragen_excl else excl)|replace('.', ',') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Totalen -->
+    <div class="row justify-content-end mt-3">
+      <div class="col-md-5 col-lg-4">
+        <div class="d-flex justify-content-between py-1 text-muted">
+          <span>Subtotaal excl. BTW</span>
+          <span>€ {{ '%.2f'|format(excl)|replace('.', ',') }}</span>
+        </div>
+        {% for label, btw_b in btw_per_code.items() %}
+        <div class="d-flex justify-content-between py-1 text-muted small">
+          <span>{{ label }}</span>
+          <span>€ {{ '%.2f'|format(btw_b)|replace('.', ',') }}</span>
+        </div>
+        {% endfor %}
+        <div class="d-flex justify-content-between py-2 fw-bold fs-5 border-top mt-1">
+          <span>Totaal</span>
+          <span>€ {{ '%.2f'|format(totaal_incl)|replace('.', ',') }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notitie -->
+    {% if f.notitie %}
+    <div class="mt-4 pt-3 border-top text-muted small">
+      {{ f.notitie }}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<style>
+@media print {
+  nav, .btn, .d-flex.justify-content-between.align-items-center.mb-3 { display: none !important; }
+  .container-fluid { padding: 0 !important; }
+  #printBlad { box-shadow: none !important; border: none !important; }
+  body { background: white !important; }
+}
+</style>
+{% endblock %}

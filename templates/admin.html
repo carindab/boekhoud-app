@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0"><i class="bi bi-shield-fill me-2"></i>Gebruikersbeheer</h5>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Naam</th>
+          <th>Bedrijf</th>
+          <th>E-mail</th>
+          <th class="text-center">Transacties</th>
+          <th class="text-center">Rol</th>
+          <th class="text-center">Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in stats %}
+        {% set u = s.user %}
+        <tr class="{% if not u.actief %}table-light text-muted{% endif %}">
+          <td class="fw-semibold">{{ u.naam }}</td>
+          <td>{{ u.bedrijfsnaam or '—' }}</td>
+          <td class="small">{{ u.email }}</td>
+          <td class="text-center">{{ s.transacties }}</td>
+          <td class="text-center">
+            {% if u.is_admin %}
+              <span class="badge bg-dark">Beheerder</span>
+            {% else %}
+              <span class="badge bg-secondary">Gebruiker</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if u.actief %}
+              <span class="badge bg-success">Actief</span>
+            {% else %}
+              <span class="badge bg-danger">Inactief</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if u.id != session.user_id %}
+            <form method="post" action="/admin/toggle/{{ u.id }}">
+              <button class="btn btn-sm {{ 'btn-outline-danger' if u.actief else 'btn-outline-success' }} py-0 px-2">
+                {% if u.actief %}<i class="bi bi-person-slash"></i> Deactiveren
+                {% else %}<i class="bi bi-person-check"></i> Activeren{% endif %}
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="alert alert-info mt-3 py-2 small">
+  <i class="bi bi-info-circle me-1"></i>
+  Nieuwe gebruikers registreren zichzelf via <strong>/registreren</strong>. Jij kunt accounts activeren of deactiveren. Elke gebruiker ziet alleen zijn eigen boekhouding.
+</div>
+{% endblock %}

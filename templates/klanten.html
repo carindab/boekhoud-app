@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0"><i class="bi bi-people me-2"></i>Klanten</h5>
+  <div class="d-flex gap-2">
+    <a href="/facturen" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i> Terug naar facturen
+    </a>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addModal">
+      <i class="bi bi-person-plus me-1"></i> Klant toevoegen
+    </button>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Naam</th>
+          <th>E-mail</th>
+          <th>Stad</th>
+          <th>BTW-nummer</th>
+          <th>KvK</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for k in klanten %}
+        <tr>
+          <td class="fw-semibold">{{ k.naam }}</td>
+          <td class="small">{{ k.email or '—' }}</td>
+          <td class="small">{{ k.stad or '—' }}</td>
+          <td class="small text-muted">{{ k.btw_nummer or '—' }}</td>
+          <td class="small text-muted">{{ k.kvk_nummer or '—' }}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="toggleEdit({{ k.id }})">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <form method="post" action="/klanten/verwijder/{{ k.id }}" style="display:inline"
+                  onsubmit="return confirm('Klant verwijderen?')">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        <tr id="edit-{{ k.id }}" style="display:none; background:#f8f9fa">
+          <td colspan="6" class="py-2 px-3">
+            <form method="post" action="/klanten/bewerken/{{ k.id }}">
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <input type="text" name="naam" class="form-control form-control-sm" value="{{ k.naam }}" placeholder="Naam" required>
+                </div>
+                <div class="col-md-2">
+                  <input type="email" name="email" class="form-control form-control-sm" value="{{ k.email or '' }}" placeholder="E-mail">
+                </div>
+                <div class="col-md-2">
+                  <input type="text" name="adres" class="form-control form-control-sm" value="{{ k.adres or '' }}" placeholder="Adres">
+                </div>
+                <div class="col-md-1">
+                  <input type="text" name="postcode" class="form-control form-control-sm" value="{{ k.postcode or '' }}" placeholder="Postcode">
+                </div>
+                <div class="col-md-2">
+                  <input type="text" name="stad" class="form-control form-control-sm" value="{{ k.stad or '' }}" placeholder="Stad">
+                </div>
+                <div class="col-md-2 d-flex gap-1">
+                  <button type="submit" class="btn btn-sm btn-success">Opslaan</button>
+                  <button type="button" class="btn btn-sm btn-secondary" onclick="toggleEdit({{ k.id }})">✕</button>
+                </div>
+                <div class="col-md-2">
+                  <input type="text" name="btw_nummer" class="form-control form-control-sm" value="{{ k.btw_nummer or '' }}" placeholder="BTW-nummer">
+                </div>
+                <div class="col-md-2">
+                  <input type="text" name="kvk_nummer" class="form-control form-control-sm" value="{{ k.kvk_nummer or '' }}" placeholder="KvK-nummer">
+                </div>
+                <div class="col-md-2">
+                  <input type="text" name="land" class="form-control form-control-sm" value="{{ k.land or 'Nederland' }}" placeholder="Land">
+                </div>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">
+            Nog geen klanten. Voeg er een toe.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Toevoegen Modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold">Klant toevoegen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/klanten/toevoegen">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Bedrijfsnaam / Naam *</label>
+              <input type="text" name="naam" class="form-control" required autofocus>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">E-mail</label>
+              <input type="email" name="email" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">KvK-nummer</label>
+              <input type="text" name="kvk_nummer" class="form-control">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Adres</label>
+              <input type="text" name="adres" class="form-control">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Postcode</label>
+              <input type="text" name="postcode" class="form-control">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Stad</label>
+              <input type="text" name="stad" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">BTW-nummer</label>
+              <input type="text" name="btw_nummer" class="form-control" placeholder="NL000000000B00">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Land</label>
+              <input type="text" name="land" class="form-control" value="Nederland">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-link text-decoration-none text-muted" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-primary">Opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleEdit(id) {
+  const row = document.getElementById('edit-' + id);
+  row.style.display = (row.style.display === 'none' || !row.style.display) ? 'table-row' : 'none';
+}
+</script>
+{% endblock %}

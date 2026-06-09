@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0"><i class="bi bi-receipt me-2"></i>Facturen</h5>
+  <div class="d-flex gap-2">
+    <a href="/klanten" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-people me-1"></i> Klanten
+    </a>
+    <a href="/facturen/nieuw" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i> Nieuwe factuur
+    </a>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="row g-2 mb-3">
+  <div class="col-auto">
+    <div class="card border-0 shadow-sm" style="background:#e2e3e5">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+        <i class="bi bi-file-earmark-text text-secondary fs-5"></i>
+        <div><div class="fw-bold">{{ stats.concept }}</div><div class="text-muted" style="font-size:.75rem">Concept</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card border-0 shadow-sm" style="background:#fff3cd">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+        <i class="bi bi-clock text-warning fs-5"></i>
+        <div><div class="fw-bold">{{ stats.vastgelegd }}</div><div class="text-muted" style="font-size:.75rem">Vastgelegd</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card border-0 shadow-sm" style="background:#d1e7dd">
+      <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill text-success fs-5"></i>
+        <div><div class="fw-bold">{{ stats.betaald }}</div><div class="text-muted" style="font-size:.75rem">Betaald</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Facturen tabel -->
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Nummer</th>
+          <th>Klant</th>
+          <th>Datum</th>
+          <th>Vervaldatum</th>
+          <th class="text-end">Totaal incl.</th>
+          <th class="text-center">Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in facturen %}
+        <tr>
+          <td class="fw-semibold">
+            <a href="/facturen/{{ f.id }}" class="text-decoration-none">{{ f.factuurnummer }}</a>
+          </td>
+          <td>{{ f.klant_naam or '—' }}</td>
+          <td class="small">{{ f.factuurdatum }}</td>
+          <td class="small {% if f.status != 'betaald' and f.vervaldatum and f.vervaldatum < now %}text-danger fw-semibold{% endif %}">
+            {{ f.vervaldatum or '—' }}
+          </td>
+          <td class="text-end fw-semibold">—</td>
+          <td class="text-center">
+            {% if f.status == 'concept' %}
+              <span class="badge bg-secondary">Concept</span>
+            {% elif f.status == 'vastgelegd' %}
+              <span class="badge bg-warning text-dark">Openstaand</span>
+            {% elif f.status == 'betaald' %}
+              <span class="badge bg-success">Betaald</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="/facturen/{{ f.id }}" class="btn btn-sm btn-outline-secondary py-0 px-2" title="Bekijken">
+              <i class="bi bi-eye"></i>
+            </a>
+            <a href="/facturen/{{ f.id }}/bewerken" class="btn btn-sm btn-outline-primary py-0 px-2" title="Bewerken">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="post" action="/facturen/{{ f.id }}/verwijder" style="display:inline"
+                  onsubmit="return confirm('Factuur verwijderen?')">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Verwijderen">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-receipt fs-1 d-block mb-2"></i>
+            Nog geen facturen.<br>
+            <a href="/facturen/nieuw" class="btn btn-primary btn-sm mt-2">Eerste factuur aanmaken</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

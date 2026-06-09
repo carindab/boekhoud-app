@@ -1,0 +1,26 @@
+# Database (bevat privédata — nooit op GitHub!)
+boekhoud.db
+*.db
+
+# Geüploade facturen (privé)
+uploads/
+
+# Environment variabelen (bevat wachtwoorden)
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

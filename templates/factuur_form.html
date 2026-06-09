@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0">
+    <i class="bi bi-receipt me-2"></i>
+    {{ 'Factuur bewerken' if factuur else 'Nieuwe factuur' }}
+  </h5>
+  <a href="/facturen" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i> Terug
+  </a>
+</div>
+
+<form method="post" id="factuurForm">
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body">
+
+    <!-- Bovenste rij: klant + sjabloon info -->
+    <div class="row g-3 mb-3">
+      <div class="col-md-5">
+        <label class="form-label fw-semibold">Klant</label>
+        <div class="input-group">
+          <select name="klant_id" class="form-select" id="klantSelect">
+            <option value="">Selecteer of voeg toe…</option>
+            {% for k in klanten %}
+            <option value="{{ k.id }}" {% if factuur and factuur.klant_id == k.id %}selected{% endif %}>
+              {{ k.naam }}
+            </option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#nieuwKlantModal" title="Nieuwe klant">
+            <i class="bi bi-person-plus"></i>
+          </button>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Factuurnummer</label>
+        <input type="text" name="factuurnummer" class="form-control" value="{{ nummer }}" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">Factuurdatum</label>
+        <input type="date" name="factuurdatum" class="form-control" value="{{ (factuur.factuurdatum if factuur else vandaag) }}" required id="factuurdatum" onchange="berekenVervaldatum()">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">Betaalprofiel</label>
+        <select name="betaalprofiel" class="form-select" id="betaalprofiel" onchange="berekenVervaldatum()">
+          {% for dagen, label in [(7,'7 dagen'),(14,'14 dagen'),(30,'30 dagen'),(60,'60 dagen'),(0,'Geen vervaldatum')] %}
+          <option value="{{ dagen }}" {% if (factuur.betaalprofiel if factuur else 30) == dagen %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-2">
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">Vervaldatum</label>
+        <input type="date" name="vervaldatum" class="form-control" id="vervaldatum"
+               value="{{ factuur.vervaldatum if factuur else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Bedragen zijn</label>
+        <select name="bedragen_excl" class="form-select" id="bedragenType" onchange="herbereken()">
+          <option value="1" {% if not factuur or factuur.bedragen_excl %}selected{% endif %}>Exclusief BTW</option>
+          <option value="0" {% if factuur and not factuur.bedragen_excl %}selected{% endif %}>Inclusief BTW</option>
+        </select>
+      </div>
+      <div class="col-md-7">
+        <label class="form-label fw-semibold">Notitie (optioneel)</label>
+        <input type="text" name="notitie" class="form-control" value="{{ factuur.notitie if factuur else '' }}"
+               placeholder="Verschijnt onderaan de factuur">
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Regelitems -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-body p-0">
+
+    <!-- Header -->
+    <div class="row g-0 px-3 py-2 border-bottom text-muted" style="font-size:.78rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em">
+      <div class="col-md-4">Omschrijving</div>
+      <div class="col-md-3">Rubriek &amp; BTW</div>
+      <div class="col-md-2 text-center">Aantal</div>
+      <div class="col-md-2 text-end">Bedrag</div>
+      <div class="col-md-1"></div>
+    </div>
+
+    <!-- Regelitems container -->
+    <div id="regels">
+      {% set bestaande_regels = regels if regels else [] %}
+      {% for r in bestaande_regels %}
+      <div class="regel-row border-bottom px-3 py-2">
+        <div class="row g-2 align-items-start">
+          <div class="col-md-4">
+            <textarea name="omschrijving[]" class="form-control form-control-sm" rows="2"
+                      placeholder="Omschrijving…">{{ r.omschrijving or '' }}</textarea>
+          </div>
+          <div class="col-md-3">
+            <select name="rekening_id[]" class="form-select form-select-sm mb-1" onchange="syncBtw(this)">
+              <option value="">— Rubriek —</option>
+              {% for rek in rekeningen %}
+              <option value="{{ rek.id }}" data-btw="{{ rek.btw_waarde }}"
+                      {% if r.rekening_id == rek.id %}selected{% endif %}>
+                {{ rek.code }} – {{ rek.naam }}
+              </option>
+              {% endfor %}
+            </select>
+            <select name="btw_waarde[]" class="form-select form-select-sm btw-select" onchange="herbereken()">
+              {% for v, l in btw_opties %}
+              <option value="{{ v }}" {% if (r.btw_waarde or '21') == v %}selected{% endif %}>{{ l }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <div class="input-group input-group-sm">
+              <input type="number" name="aantal[]" class="form-control aantal-input" min="0.01" step="0.01"
+                     value="{{ r.aantal or 1 }}" onchange="herbereken()" oninput="herbereken()">
+              <span class="input-group-text">×</span>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" name="eenheidsprijs[]" class="form-control prijs-input" min="0" step="0.01"
+                     value="{{ r.eenheidsprijs or 0 }}" onchange="herbereken()" oninput="herbereken()">
+            </div>
+          </div>
+          <div class="col-md-1 text-end">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 verwijder-regel" onclick="verwijderRegel(this)">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <!-- Lege eerste regel -->
+      <div class="regel-row border-bottom px-3 py-2">
+        <div class="row g-2 align-items-start">
+          <div class="col-md-4">
+            <textarea name="omschrijving[]" class="form-control form-control-sm" rows="2" placeholder="Omschrijving…"></textarea>
+          </div>
+          <div class="col-md-3">
+            <select name="rekening_id[]" class="form-select form-select-sm mb-1" onchange="syncBtw(this)">
+              <option value="">— Rubriek —</option>
+              {% for rek in rekeningen %}
+              <option value="{{ rek.id }}" data-btw="{{ rek.btw_waarde }}">{{ rek.code }} – {{ rek.naam }}</option>
+              {% endfor %}
+            </select>
+            <select name="btw_waarde[]" class="form-select form-select-sm btw-select" onchange="herbereken()">
+              {% for v, l in btw_opties %}
+              <option value="{{ v }}" {% if v == '21' %}selected{% endif %}>{{ l }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <div class="input-group input-group-sm">
+              <input type="number" name="aantal[]" class="form-control aantal-input" min="0.01" step="0.01" value="1" onchange="herbereken()" oninput="herbereken()">
+              <span class="input-group-text">×</span>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">€</span>
+              <input type="number" name="eenheidsprijs[]" class="form-control prijs-input" min="0" step="0.01" value="0.00" onchange="herbereken()" oninput="herbereken()">
+            </div>
+          </div>
+          <div class="col-md-1 text-end">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 verwijder-regel" onclick="verwijderRegel(this)">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Regel toevoegen knop -->
+    <div class="px-3 py-2 border-bottom">
+      <button type="button" class="btn btn-link text-decoration-none ps-0" onclick="regelToevoegen()">
+        <i class="bi bi-plus-lg me-1"></i> Regel toevoegen
+      </button>
+    </div>
+
+    <!-- Totalen -->
+    <div class="px-3 py-3">
+      <div class="row justify-content-end">
+        <div class="col-md-4">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="text-muted" id="exclLabel">Totaal exclusief BTW</span>
+            <span id="totaalExcl">€ 0,00</span>
+          </div>
+          <div id="btwRijen"></div>
+          <hr class="my-2">
+          <div class="d-flex justify-content-between fw-bold fs-5">
+            <span>Totaal</span>
+            <span id="totaalIncl">€ 0,00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Actieknoppen -->
+<div class="d-flex justify-content-end gap-2">
+  <a href="/facturen" class="btn btn-outline-secondary">Annuleren</a>
+  <button type="submit" name="status" value="concept" class="btn btn-outline-primary">
+    <i class="bi bi-floppy me-1"></i> Opslaan als concept
+  </button>
+  <button type="submit" name="status" value="vastgelegd" class="btn btn-primary">
+    <i class="bi bi-check-lg me-1"></i> Factuur vastleggen
+  </button>
+</div>
+
+</form>
+
+<!-- Nieuwe klant modal -->
+<div class="modal fade" id="nieuwKlantModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold">Nieuwe klant toevoegen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/klanten/toevoegen" id="klantForm">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Bedrijfsnaam / Naam *</label>
+              <input type="text" name="naam" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">E-mail</label>
+              <input type="email" name="email" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">KvK-nummer</label>
+              <input type="text" name="kvk_nummer" class="form-control">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Adres</label>
+              <input type="text" name="adres" class="form-control" placeholder="Straat en huisnummer">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Postcode</label>
+              <input type="text" name="postcode" class="form-control">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Stad</label>
+              <input type="text" name="stad" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">BTW-nummer</label>
+              <input type="text" name="btw_nummer" class="form-control" placeholder="NL000000000B00">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Land</label>
+              <input type="text" name="land" class="form-control" value="Nederland">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-link text-decoration-none text-muted" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-primary">Klant opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Regel template (hidden) -->
+<template id="regelTemplate">
+  <div class="regel-row border-bottom px-3 py-2">
+    <div class="row g-2 align-items-start">
+      <div class="col-md-4">
+        <textarea name="omschrijving[]" class="form-control form-control-sm" rows="2" placeholder="Omschrijving…"></textarea>
+      </div>
+      <div class="col-md-3">
+        <select name="rekening_id[]" class="form-select form-select-sm mb-1" onchange="syncBtw(this)">
+          <option value="">— Rubriek —</option>
+          {% for rek in rekeningen %}
+          <option value="{{ rek.id }}" data-btw="{{ rek.btw_waarde }}">{{ rek.code }} – {{ rek.naam }}</option>
+          {% endfor %}
+        </select>
+        <select name="btw_waarde[]" class="form-select form-select-sm btw-select" onchange="herbereken()">
+          {% for v, l in btw_opties %}
+          <option value="{{ v }}" {% if v == '21' %}selected{% endif %}>{{ l }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <div class="input-group input-group-sm">
+          <input type="number" name="aantal[]" class="form-control aantal-input" min="0.01" step="0.01" value="1" onchange="herbereken()" oninput="herbereken()">
+          <span class="input-group-text">×</span>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">€</span>
+          <input type="number" name="eenheidsprijs[]" class="form-control prijs-input" min="0" step="0.01" value="0.00" onchange="herbereken()" oninput="herbereken()">
+        </div>
+      </div>
+      <div class="col-md-1 text-end">
+        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="verwijderRegel(this)">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const BTW_LABELS = {
+  {% for v, l in btw_opties %}'{{ v }}': '{{ l }}',{% endfor %}
+};
+
+function fmt(n) {
+  return '€ ' + n.toFixed(2).replace('.', ',');
+}
+
+function herbereken() {
+  const excl = document.getElementById('bedragenType').value === '1';
+  const regels = document.querySelectorAll('.regel-row');
+  let totaalExcl = 0;
+  const btwMap = {};
+
+  regels.forEach(row => {
+    const n   = parseFloat(row.querySelector('.aantal-input')?.value || 1);
+    const p   = parseFloat(row.querySelector('.prijs-input')?.value  || 0);
+    const bw  = row.querySelector('.btw-select')?.value || '0';
+    const pct = parseFloat(bw.split('_')[0]) || 0;
+
+    let e, b;
+    if (excl) {
+      e = n * p;
+      b = e * pct / 100;
+    } else {
+      const inc = n * p;
+      e = pct ? inc / (1 + pct / 100) : inc;
+      b = inc - e;
+    }
+    totaalExcl += e;
+    const label = BTW_LABELS[bw] || bw;
+    btwMap[label] = (btwMap[label] || 0) + b;
+  });
+
+  document.getElementById('totaalExcl').textContent = fmt(totaalExcl);
+  document.getElementById('exclLabel').textContent = excl ? 'Totaal exclusief BTW' : 'Totaal exclusief BTW';
+
+  const btwContainer = document.getElementById('btwRijen');
+  btwContainer.innerHTML = '';
+  let totaalBtw = 0;
+  Object.entries(btwMap).forEach(([label, btw]) => {
+    totaalBtw += btw;
+    const div = document.createElement('div');
+    div.className = 'd-flex justify-content-between mb-1 text-muted small';
+    div.innerHTML = `<span>${label}</span><span>${fmt(btw)}</span>`;
+    btwContainer.appendChild(div);
+  });
+
+  document.getElementById('totaalIncl').textContent = fmt(totaalExcl + totaalBtw);
+}
+
+function regelToevoegen() {
+  const tmpl = document.getElementById('regelTemplate');
+  const clone = tmpl.content.cloneNode(true);
+  document.getElementById('regels').appendChild(clone);
+  herbereken();
+}
+
+function verwijderRegel(btn) {
+  const row = btn.closest('.regel-row');
+  if (document.querySelectorAll('.regel-row').length > 1) {
+    row.remove();
+  } else {
+    row.querySelectorAll('input, textarea').forEach(el => el.value = el.type === 'number' ? '0' : '');
+  }
+  herbereken();
+}
+
+function syncBtw(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  if (opt && opt.dataset.btw) {
+    const btwSel = sel.closest('.col-md-3').querySelector('.btw-select');
+    if (btwSel) btwSel.value = opt.dataset.btw;
+  }
+  herbereken();
+}
+
+function berekenVervaldatum() {
+  const datum = document.getElementById('factuurdatum').value;
+  const dagen = parseInt(document.getElementById('betaalprofiel').value);
+  if (!datum || !dagen) return;
+  const d = new Date(datum);
+  d.setDate(d.getDate() + dagen);
+  document.getElementById('vervaldatum').value = d.toISOString().split('T')[0];
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+  herbereken();
+  if (!document.getElementById('vervaldatum').value) berekenVervaldatum();
+});
+</script>
+{% endblock %}
