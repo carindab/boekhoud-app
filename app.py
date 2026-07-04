@@ -532,6 +532,24 @@ def verwijder(tid):
     return redirect(request.referrer or url_for('transacties'))
 
 
+@app.route('/verwijder-meerdere', methods=['POST'])
+@login_required
+def verwijder_meerdere():
+    ids = request.form.getlist('ids')
+    ids = [int(i) for i in ids if str(i).isdigit()]
+    if not ids:
+        flash('Geen transacties geselecteerd.', 'warning')
+        return redirect(request.referrer or url_for('transacties'))
+    with get_db() as conn:
+        placeholders = ','.join('?' for _ in ids)
+        conn.execute(
+            f'DELETE FROM transacties WHERE user_id=? AND id IN ({placeholders})',
+            [uid()] + ids
+        )
+    flash(f'{len(ids)} transactie(s) verwijderd.', 'info')
+    return redirect(request.referrer or url_for('transacties'))
+
+
 @app.route('/uploads/<filename>')
 @login_required
 def uploaded_file(filename):
