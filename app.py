@@ -229,6 +229,28 @@ def parse_amount(s):
     return float(s)
 
 
+def _normaliseer_datum(raw):
+    """Zet allerlei datumnotaties om naar YYYY-MM-DD."""
+    raw = (raw or '').strip()
+    if not raw:
+        return raw
+    for fmt in ('%Y-%m-%d', '%Y%m%d', '%d-%m-%Y', '%d/%m/%Y', '%d-%m-%y', '%Y/%m/%d'):
+        try:
+            return datetime.strptime(raw, fmt).strftime('%Y-%m-%d')
+        except Exception:
+            continue
+    return raw
+
+
+def _vind_kolom(kolommen, *zoektermen):
+    """Vind de eerste kolomnaam die een van de zoektermen bevat (niet-hoofdlettergevoelig)."""
+    for zt in zoektermen:
+        for k in kolommen:
+            if zt in k.lower():
+                return k
+    return None
+
+
 def detect_and_parse_csv(content):
     for enc in ('utf-8-sig', 'utf-8', 'latin-1', 'cp1252'):
         try:
@@ -243,8 +265,11 @@ def detect_and_parse_csv(content):
     if not lines:
         return []
 
+    # Bepaal scheidingsteken op basis van de kopregel
     first = lines[0]
     delimiter = ';' if first.count(';') >= first.count(',') else ','
+    if first.count('\t') > first.count(delimiter):
+        delimiter = '\t'
 
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     try:
@@ -254,66 +279,68 @@ def detect_and_parse_csv(content):
     if not rows:
         return []
 
-    header_lower = ' '.join(k.lower() for k in rows[0].keys())
+    kolommen = [k for k in rows[0].keys() if k]
+
+    # Slim de juiste kolommen opzoeken (werkt voor Rabobank, ING, ABN, SNS, etc.)
+    k_datum   = _vind_kolom(kolommen, 'transactiedatum', 'boekingsdatum', 'datum')
+    k_bedrag  = _vind_kolom(kolommen, 'bedrag (eur)', 'transactiebedrag', 'bedrag')
+    k_afbij   = _vind_kolom(kolommen, 'af bij', 'af/bij', 'debet/credit')
+    k_naam    = _vind_kolom(kolommen, 'naam tegenpartij', 'tegenpartij naam',
+                            'naam / omschrijving', 'naam tegenrekening')
+    k_tegen   = _vind_kolom(kolommen, 'tegenrekening iban', 'tegenpartij iban',
+                            'tegenrekening', 'tegenpartij')
+    # Alle omschrijving/mededelingen-kolommen verzamelen (niet de naam-kolom zelf)
+    k_omschr = [k for k in kolommen
+                if ('omschrijving' in k.lower() or 'mededeling' in k.lower())
+                and k != k_naam]
+
     transactions = []
+    for r in rows:
+        # Datum
+        datum = _normaliseer_datum(r.get(k_datum, '') if k_datum else '')
 
-    # ING
-    if 'af bij' in header_lower or 'bedrag (eur)' in header_lower:
-        for r in rows:
-            r = {k.strip(): v.strip() for k, v in r.items()}
-            datum_raw = r.get('Datum', '')
-            try:
-                datum = datetime.strptime(datum_raw, '%Y%m%d').strftime('%Y-%m-%d')
-            except Exception:
-                datum = datum_raw
-            omschr = r.get('Naam / Omschrijving') or r.get('Mededelingen') or ''
-            bedrag_str = r.get('Bedrag (EUR)') or '0'
-            af_bij = (r.get('Af Bij') or 'af').lower().strip()
-            try:
-                bedrag = parse_amount(bedrag_str)
-            except Exception:
-                continue
-            bedrag = -abs(bedrag) if af_bij == 'af' else abs(bedrag)
-            transactions.append({'datum': datum, 'omschrijving': omschr,
-                                  'bedrag': bedrag, 'tegenrekening': r.get('Tegenrekening', '')})
+        # Bedrag
+        bedrag_raw = (r.get(k_bedrag, '') if k_bedrag else '').strip()
+        if not bedrag_raw:
+            continue
+        try:
+            bedrag = parse_amount(bedrag_raw)
+        except Exception:
+            continue
+        # Af/Bij kolom (ING) bepaalt teken
+        if k_afbij:
+            af_bij = (r.get(k_afbij, '') or '').lower().strip()
+            if af_bij in ('af', 'debet', 'd'):
+                bedrag = -abs(bedrag)
+            elif af_bij in ('bij', 'credit', 'c'):
+                bedrag = abs(bedrag)
 
-    # Rabobank
-    elif 'volgnr' in header_lower or 'tegenpartij naam' in header_lower:
-        for r in rows:
-            r = {k.strip(): v.strip() for k, v in r.items()}
-            datum = r.get('Datum', '')
-            omschr = r.get('Omschrijving 1') or r.get('Tegenpartij naam') or ''
-            try:
-                bedrag = parse_amount(r.get('Bedrag', '0'))
-            except Exception:
-                continue
-            transactions.append({'datum': datum, 'omschrijving': omschr,
-                                  'bedrag': bedrag, 'tegenrekening': r.get('Tegenpartij IBAN', '')})
+        # Naam tegenpartij (hoofdregel, dik)
+        naam = (r.get(k_naam, '') if k_naam else '').strip()
 
-    # ABN AMRO
-    elif 'transactiedatum' in header_lower:
-        for r in rows:
-            r = {k.strip(): v.strip() for k, v in r.items()}
-            try:
-                bedrag = parse_amount(r.get('bedrag', '0'))
-            except Exception:
-                continue
-            transactions.append({'datum': r.get('transactiedatum', ''),
-                                  'omschrijving': r.get('omschrijving', ''),
-                                  'bedrag': bedrag, 'tegenrekening': ''})
+        # Omschrijving samenstellen uit alle omschrijving-kolommen
+        omschr_delen = []
+        for k in k_omschr:
+            v = (r.get(k, '') or '').strip()
+            if v and v not in omschr_delen:
+                omschr_delen.append(v)
+        omschrijving_tekst = ' '.join(omschr_delen).strip()
 
-    # Generic CSV
-    else:
-        for r in rows:
-            vals = list(r.values())
-            if len(vals) >= 3:
-                try:
-                    bedrag = parse_amount(vals[2])
-                except Exception:
-                    continue
-                transactions.append({'datum': vals[0].strip(), 'omschrijving': vals[1].strip(),
-                                     'bedrag': bedrag,
-                                     'tegenrekening': vals[3].strip() if len(vals) > 3 else ''})
+        # Hoofdregel = naam; als geen naam, dan de omschrijving zelf
+        hoofd = naam or omschrijving_tekst or '—'
+        # Detailregel = omschrijving (als naam al de hoofdregel is)
+        detail = omschrijving_tekst if naam else ''
+        tegen_iban = (r.get(k_tegen, '') if k_tegen else '').strip()
+        if tegen_iban and tegen_iban not in detail:
+            detail = (detail + '  ·  ' + tegen_iban).strip(' ·') if detail else tegen_iban
+
+        transactions.append({
+            'datum': datum,
+            'omschrijving': hoofd,
+            'bedrag': bedrag,
+            'tegenrekening': detail,
+        })
+
     return transactions
 
 
