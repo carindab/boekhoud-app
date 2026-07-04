@@ -209,46 +209,121 @@
         <!-- TAB: Boekingen -->
         <div class="tab-pane fade show active" id="tabBoeken">
 
-          <!-- Suggestie (verschijnt als een auto-regel matcht) -->
-          <div id="suggestieKaart" class="card border-primary mb-3 d-none">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-start">
-                <div>
-                  <div class="fw-bold" id="sugNaam">—</div>
-                  <div class="text-muted small" id="sugBtw">—</div>
+          <!-- Verborgen velden die uiteindelijk verstuurd worden -->
+          <input type="hidden" name="rekening_id" id="fldRekening">
+          <input type="hidden" name="btw_waarde"  id="fldBtw" value="0">
+          <input type="hidden" name="factuur_id"  id="fldFactuur">
+
+          <!-- Sub-keuze: waarop boeken -->
+          <div class="btn-group w-100 mb-3" role="group">
+            <button type="button" class="btn btn-outline-secondary active" id="subRubriek" onclick="kiesSub('rubriek')">Rubriek</button>
+            <button type="button" class="btn btn-outline-secondary" id="subFactuur" onclick="kiesSub('factuur')">Factuur</button>
+            <button type="button" class="btn btn-outline-secondary" id="subEigen"  onclick="kiesSub('eigen')">Eigen rekening</button>
+          </div>
+
+          <!-- SUB: Rubriek -->
+          <div id="paneRubriek">
+            <!-- Suggestie -->
+            <div id="suggestieKaart" class="card border-primary mb-3 d-none">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="fw-bold" id="sugNaam">—</div>
+                    <div class="text-muted small" id="sugBtw">—</div>
+                  </div>
+                  <span class="badge bg-primary-subtle text-primary"><i class="bi bi-robot me-1"></i>Suggestie</span>
                 </div>
-                <span class="badge bg-primary-subtle text-primary"><i class="bi bi-robot me-1"></i>Suggestie</span>
+                <div class="text-muted small mt-2" id="sugReden">Deze transactie matcht een eerdere boeking:</div>
+                <button type="button" class="btn btn-primary w-100 mt-3" onclick="accepteerSuggestie()">
+                  <i class="bi bi-check-circle me-1"></i> Accepteer deze suggestie
+                </button>
               </div>
-              <div class="text-muted small mt-2">Deze transactie matcht jouw ingestelde auto-regel:</div>
-              <div class="small mt-1"><i class="bi bi-check text-primary"></i> Omschrijving bevat "<span id="sugTerm"></span>"</div>
-              <button type="button" class="btn btn-primary w-100 mt-3" onclick="accepteerSuggestie()">
-                <i class="bi bi-check-circle me-1"></i> Accepteer deze suggestie
-              </button>
+            </div>
+
+            <label class="form-label fw-semibold">Kies een rubriek (grootboekrekening)</label>
+            <select id="boekRekening" class="form-select mb-3" onchange="boekBtwSync()">
+              <option value="">— Kies een rubriek —</option>
+              {% set cats = [('omzet','Omzet'),('kosten','Kosten'),('activa','Activa'),('passiva','Passiva'),('nvt','Overig')] %}
+              {% for key, label in cats %}
+                {% set groep = rekeningen | selectattr('type','equalto',key) | list %}
+                {% if groep %}
+                <optgroup label="{{ label }}">
+                  {% for r in groep | sort(attribute='code') %}
+                  <option value="{{ r.id }}" data-btw="{{ r.btw_waarde }}">{{ r.code }} – {{ r.naam }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+              {% endfor %}
+            </select>
+
+            <label class="form-label fw-semibold">BTW-code</label>
+            <select id="boekBtw" class="form-select mb-3" onchange="document.getElementById('fldBtw').value=this.value">
+              {% for v, l in btw_opties %}
+              <option value="{{ v }}">{{ l }}</option>
+              {% endfor %}
+            </select>
+
+            <!-- Onthoud / automatisch boeken -->
+            <div class="border rounded p-2 bg-white">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="chkOnthoud" name="onthoud" value="1">
+                <label class="form-check-label small" for="chkOnthoud">
+                  Onthoud dit voor <strong id="onthoudNaam">deze tegenpartij</strong> (stel volgende keer voor)
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="chkAuto" name="auto_boek" value="1" onchange="if(this.checked)document.getElementById('chkOnthoud').checked=true">
+                <label class="form-check-label small" for="chkAuto">
+                  <i class="bi bi-lightning-fill text-warning"></i> En boek voortaan <strong>automatisch</strong> bij import
+                </label>
+              </div>
             </div>
           </div>
 
-          <label class="form-label fw-semibold">Kies een rubriek (grootboekrekening)</label>
-          <select name="rekening_id" id="boekRekening" class="form-select mb-3" onchange="boekBtwSync()">
-            <option value="">— Kies een rubriek —</option>
-            {% set cats = [('omzet','Omzet'),('kosten','Kosten'),('activa','Activa'),('passiva','Passiva'),('prive','Privé'),('nvt','Overig')] %}
-            {% for key, label in cats %}
-              {% set groep = rekeningen | selectattr('type','equalto',key) | list %}
-              {% if groep %}
-              <optgroup label="{{ label }}">
-                {% for r in groep | sort(attribute='code') %}
-                <option value="{{ r.id }}" data-btw="{{ r.btw_waarde }}">{{ r.code }} – {{ r.naam }}</option>
+          <!-- SUB: Factuur -->
+          <div id="paneFactuur" class="d-none">
+            <label class="form-label fw-semibold">Koppel aan een factuur</label>
+            {% if facturen_js %}
+            <select id="factuurSelect" class="form-select mb-2" onchange="kiesFactuur()">
+              <option value="">— Kies een factuur —</option>
+              {% for f in facturen_js %}
+              <option value="{{ f.id }}">{{ f.factuurnummer }} · {{ f.klant_naam or 'zonder klant' }} · {{ f.factuurdatum }}</option>
+              {% endfor %}
+            </select>
+            <div class="text-muted small">De betaling wordt als omzet geboekt en de factuur op 'betaald' gezet.</div>
+            {% else %}
+            <div class="alert alert-light border small">
+              Nog geen openstaande facturen. Maak er een aan bij <a href="/facturen">Facturen</a>.
+            </div>
+            {% endif %}
+            <label class="form-label fw-semibold mt-3">Omzet-rubriek</label>
+            <select id="factuurRubriek" class="form-select" onchange="setFactuurRubriek()">
+              <option value="">— Kies omzetrekening —</option>
+              {% set omzet = rekeningen | selectattr('type','equalto','omzet') | list %}
+              {% for r in omzet | sort(attribute='code') %}
+              <option value="{{ r.id }}" data-btw="{{ r.btw_waarde }}">{{ r.code }} – {{ r.naam }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- SUB: Eigen rekening -->
+          <div id="paneEigen" class="d-none">
+            <label class="form-label fw-semibold">Overboeking naar/van eigen rekening</label>
+            <select id="eigenSelect" class="form-select" onchange="kiesEigen()">
+              <option value="">— Kies eigen rekening —</option>
+              {% set eigen = rekeningen | selectattr('type','equalto','prive') | list %}
+              {% for r in eigen | sort(attribute='code') %}
+              <option value="{{ r.id }}">{{ r.code }} – {{ r.naam }}</option>
+              {% endfor %}
+              {% set activa = rekeningen | selectattr('type','equalto','activa') | list %}
+              <optgroup label="Bankrekeningen">
+                {% for r in activa | sort(attribute='code') %}
+                <option value="{{ r.id }}">{{ r.code }} – {{ r.naam }}</option>
                 {% endfor %}
               </optgroup>
-              {% endif %}
-            {% endfor %}
-          </select>
-
-          <label class="form-label fw-semibold">BTW-code</label>
-          <select name="btw_waarde" id="boekBtw" class="form-select mb-3">
-            {% for v, l in btw_opties %}
-            <option value="{{ v }}">{{ l }}</option>
-            {% endfor %}
-          </select>
+            </select>
+            <div class="text-muted small mt-1">Voor overboekingen tussen je eigen rekeningen of privé — telt niet als omzet of kosten.</div>
+          </div>
         </div>
 
         <!-- TAB: Bestanden -->
@@ -313,7 +388,8 @@
 
 {% block scripts %}
 <script>
-const REGELS = {{ regels_js | tojson }};
+const REGELS  = {{ regels_js | tojson }};
+const GELEERD = {{ geleerd_js | tojson }};
 const BTW_LABELS = { {% for v, l in btw_opties %}'{{ v }}': "{{ l }}", {% endfor %} };
 let boekOffcanvas = null;
 
@@ -335,14 +411,25 @@ function openBoek(row) {
   document.getElementById('boekKop').style.borderLeftColor = bedrag >= 0 ? '#198754' : '#dc3545';
   document.getElementById('kopNaam').textContent = d.naam || '—';
   document.getElementById('kopDetail').textContent = d.detail || '';
+  document.getElementById('onthoudNaam').textContent = d.naam || 'deze tegenpartij';
 
   // Formulier target
   document.getElementById('boekForm').action = '/boek/' + d.id;
 
-  // Bestaande waarden
+  // Reset sub-keuze naar Rubriek
+  kiesSub('rubriek');
+
+  // Bestaande waarden invullen
   document.getElementById('boekRekening').value = d.rekening || '';
   document.getElementById('boekBtw').value = d.btw || '0';
   document.getElementById('boekNotitie').value = d.notitie || '';
+  document.getElementById('fldRekening').value = d.rekening || '';
+  document.getElementById('fldBtw').value = d.btw || '0';
+  document.getElementById('fldFactuur').value = '';
+  document.getElementById('chkOnthoud').checked = false;
+  document.getElementById('chkAuto').checked = false;
+  const fsel = document.getElementById('factuurSelect'); if (fsel) fsel.value = '';
+  document.getElementById('eigenSelect').value = '';
 
   // Huidig bestand
   const huidig = document.getElementById('huidigBestand');
@@ -353,22 +440,30 @@ function openBoek(row) {
     huidig.classList.add('d-none');
   }
 
-  // Suggestie zoeken op basis van auto-regels
+  // Suggestie: eerst geleerde (exacte tegenpartij), anders zoekterm-regel
+  const naam = (d.naam || '').trim().toLowerCase();
   const tekst = ((d.naam || '') + ' ' + (d.detail || '')).toLowerCase();
-  const sug = REGELS.find(r => r.zoekterm && tekst.includes(r.zoekterm.toLowerCase()));
+  let sug = null, reden = '';
+  const gl = GELEERD.find(g => g.sleutel && naam === g.sleutel);
+  if (gl) {
+    sug = gl; reden = 'Je boekte deze tegenpartij eerder hierop:';
+  } else {
+    const r = REGELS.find(r => r.zoekterm && tekst.includes(r.zoekterm.toLowerCase()));
+    if (r) { sug = r; reden = 'Omschrijving bevat "' + r.zoekterm + '":'; }
+  }
   const sugKaart = document.getElementById('suggestieKaart');
   if (sug && !d.rekening) {
     sugKaart.classList.remove('d-none');
     document.getElementById('sugNaam').textContent = sug.code + ' – ' + sug.naam;
     document.getElementById('sugBtw').textContent = BTW_LABELS[sug.btw_waarde] || '';
-    document.getElementById('sugTerm').textContent = sug.zoekterm;
+    document.getElementById('sugReden').textContent = reden;
     sugKaart.dataset.rekening = sug.rekening_id;
     sugKaart.dataset.btw = sug.btw_waarde;
   } else {
     sugKaart.classList.add('d-none');
   }
 
-  // Altijd op eerste tab starten
+  // Altijd op eerste hoofd-tab (Boekingen) starten
   document.querySelector('#boekPanel .nav-link.active')?.classList.remove('active');
   document.querySelector('#boekPanel .nav-link').classList.add('active');
   document.querySelectorAll('#boekPanel .tab-pane').forEach((p,i) => {
@@ -379,19 +474,56 @@ function openBoek(row) {
   boekOffcanvas.show();
 }
 
+// Wissel tussen Rubriek / Factuur / Eigen rekening
+function kiesSub(welke) {
+  const map = {rubriek:'paneRubriek', factuur:'paneFactuur', eigen:'paneEigen'};
+  const btns = {rubriek:'subRubriek', factuur:'subFactuur', eigen:'subEigen'};
+  Object.values(map).forEach(id => document.getElementById(id).classList.add('d-none'));
+  Object.values(btns).forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById(map[welke]).classList.remove('d-none');
+  document.getElementById(btns[welke]).classList.add('active');
+  // Bij wisselen de bijbehorende waarden resetten
+  if (welke === 'rubriek') {
+    document.getElementById('fldFactuur').value = '';
+  }
+}
+
 function boekBtwSync() {
   const sel = document.getElementById('boekRekening');
   const opt = sel.options[sel.selectedIndex];
+  document.getElementById('fldRekening').value = sel.value;
   if (opt && opt.dataset.btw !== undefined && opt.dataset.btw !== '') {
     document.getElementById('boekBtw').value = opt.dataset.btw;
+    document.getElementById('fldBtw').value = opt.dataset.btw;
   }
+  document.getElementById('fldFactuur').value = '';
 }
 
 function accepteerSuggestie() {
   const k = document.getElementById('suggestieKaart');
   document.getElementById('boekRekening').value = k.dataset.rekening;
   document.getElementById('boekBtw').value = k.dataset.btw;
+  document.getElementById('fldRekening').value = k.dataset.rekening;
+  document.getElementById('fldBtw').value = k.dataset.btw;
   k.classList.add('d-none');
+}
+
+// Factuur koppelen
+function kiesFactuur() {
+  document.getElementById('fldFactuur').value = document.getElementById('factuurSelect').value;
+}
+function setFactuurRubriek() {
+  const sel = document.getElementById('factuurRubriek');
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('fldRekening').value = sel.value;
+  document.getElementById('fldBtw').value = (opt && opt.dataset.btw) ? opt.dataset.btw : '21';
+}
+
+// Eigen rekening kiezen
+function kiesEigen() {
+  document.getElementById('fldRekening').value = document.getElementById('eigenSelect').value;
+  document.getElementById('fldBtw').value = '0';
+  document.getElementById('fldFactuur').value = '';
 }
 
 // Bulk-selectie

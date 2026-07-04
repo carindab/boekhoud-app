@@ -187,7 +187,33 @@ def maak_standaard_rekeningen(user_id):
         )
 
 
+def migreer_db():
+    """Voegt nieuwe kolommen/tabellen toe aan bestaande databases zonder dataverlies."""
+    with get_db() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(transacties)").fetchall()]
+        if 'factuur_id' not in cols:
+            conn.execute('ALTER TABLE transacties ADD COLUMN factuur_id INTEGER')
+        # Tabel met geleerde boekingen (onthoudt tegenpartij -> rubriek)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS geleerde_regels (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                sleutel     TEXT    NOT NULL,
+                rekening_id INTEGER,
+                btw_waarde  TEXT    DEFAULT '0',
+                auto_boek   INTEGER DEFAULT 0,
+                UNIQUE(user_id, sleutel)
+            )
+        ''')
+
+
+def leer_sleutel(naam):
+    """Normaliseert een tegenpartij-naam tot een herkensleutel."""
+    return (naam or '').strip().lower()[:80]
+
+
 init_db()
+migreer_db()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -456,14 +482,31 @@ def transacties():
                WHERE r.user_id=?''', (uid(),)
         ).fetchall()
 
-    # Rekeningen en regels als simpele dicts voor gebruik in JavaScript
+        # Geleerde regels (tegenpartij -> rubriek) voor suggesties
+        geleerd = conn.execute(
+            '''SELECT g.sleutel, g.rekening_id, g.btw_waarde, g.auto_boek, rek.code, rek.naam
+               FROM geleerde_regels g JOIN rekeningen rek ON g.rekening_id = rek.id
+               WHERE g.user_id=?''', (uid(),)
+        ).fetchall()
+
+        # Open facturen om aan een betaling te koppelen
+        facturen_open = conn.execute(
+            '''SELECT f.id, f.factuurnummer, f.factuurdatum, k.naam AS klant_naam
+               FROM facturen f LEFT JOIN klanten k ON f.klant_id = k.id
+               WHERE f.user_id=? AND f.status != 'betaald'
+               ORDER BY f.factuurdatum DESC''', (uid(),)
+        ).fetchall()
+
     rekeningen_js = [dict(r) for r in rekeningen]
     regels_js = [dict(r) for r in regels]
+    geleerd_js = [dict(r) for r in geleerd]
+    facturen_js = [dict(r) for r in facturen_open]
 
     return render_template('transacties.html', transacties=rows, rekeningen=rekeningen,
                            filter_mode=filter_mode, kw_filter=kw_filter, all_kw=all_kw,
                            stats=stats, kwartaal_fn=kwartaal, btw_opties=BTW_OPTIES, btw_label=btw_label,
-                           rekeningen_js=rekeningen_js, regels_js=regels_js)
+                           rekeningen_js=rekeningen_js, regels_js=regels_js,
+                           geleerd_js=geleerd_js, facturen_js=facturen_js)
 
 
 @app.route('/importeer', methods=['POST'])
@@ -479,18 +522,28 @@ def importeer():
         flash('Kon geen transacties lezen. Controleer het bestandsformaat (ING/Rabobank/ABN/CSV).', 'danger')
         return redirect(url_for('transacties'))
 
-    imported = skipped = 0
+    imported = skipped = auto_geboekt = 0
     with get_db() as conn:
         regels = conn.execute('SELECT * FROM regels WHERE user_id=?', (uid(),)).fetchall()
+        geleerd = {g['sleutel']: g for g in conn.execute(
+            'SELECT * FROM geleerde_regels WHERE user_id=? AND auto_boek=1', (uid(),)).fetchall()}
         for t in parsed:
             h = hashlib.md5(f"{uid()}|{t['datum']}|{t['omschrijving']}|{t['bedrag']}".encode()).hexdigest()
             rekening_id = None
             btw_waarde = '0'
-            for regel in regels:
-                if regel['zoekterm'].lower() in (t['omschrijving'] or '').lower():
-                    rekening_id = regel['rekening_id']
-                    btw_waarde = regel['btw_waarde']
-                    break
+            # 1) Geleerde auto-boekregel (exacte tegenpartij) heeft voorrang
+            gl = geleerd.get(leer_sleutel(t['omschrijving']))
+            if gl:
+                rekening_id = gl['rekening_id']
+                btw_waarde = gl['btw_waarde']
+                auto_geboekt += 1
+            else:
+                # 2) Handmatige zoekterm-regels
+                for regel in regels:
+                    if regel['zoekterm'].lower() in (t['omschrijving'] or '').lower():
+                        rekening_id = regel['rekening_id']
+                        btw_waarde = regel['btw_waarde']
+                        break
             geboekt = 1 if rekening_id else 0
             try:
                 conn.execute(
@@ -502,7 +555,8 @@ def importeer():
             except sqlite3.IntegrityError:
                 skipped += 1
 
-    flash(f'✓ {imported} transacties geïmporteerd, {skipped} overgeslagen (al aanwezig).', 'success')
+    extra = f' waarvan {auto_geboekt} automatisch geboekt' if auto_geboekt else ''
+    flash(f'✓ {imported} transacties geïmporteerd{extra}, {skipped} overgeslagen (al aanwezig).', 'success')
     return redirect(url_for('transacties'))
 
 
@@ -518,6 +572,9 @@ def boek(tid):
         rekening_id = request.form.get('rekening_id') or None
         btw_waarde = request.form.get('btw_waarde') or '0'
         notitie = request.form.get('notitie', '')
+        factuur_id = request.form.get('factuur_id') or None
+        onthoud = request.form.get('onthoud') == '1'
+        auto_boek = request.form.get('auto_boek') == '1'
         factuur = t['factuur']
 
         f = request.files.get('factuur')
@@ -528,9 +585,28 @@ def boek(tid):
 
         geboekt = 1 if rekening_id else 0
         conn.execute(
-            'UPDATE transacties SET rekening_id=?, btw_waarde=?, notitie=?, factuur=?, geboekt=? WHERE id=? AND user_id=?',
-            (rekening_id, btw_waarde, notitie, factuur, geboekt, tid, uid())
+            'UPDATE transacties SET rekening_id=?, btw_waarde=?, notitie=?, factuur=?, factuur_id=?, geboekt=? WHERE id=? AND user_id=?',
+            (rekening_id, btw_waarde, notitie, factuur, factuur_id, geboekt, tid, uid())
         )
+
+        # Gekoppelde factuur op 'betaald' zetten
+        if factuur_id:
+            conn.execute("UPDATE facturen SET status='betaald' WHERE id=? AND user_id=?",
+                         (factuur_id, uid()))
+
+        # Onthoud deze boeking voor toekomstige transacties van dezelfde tegenpartij
+        if (onthoud or auto_boek) and rekening_id:
+            sleutel = leer_sleutel(t['omschrijving'])
+            if sleutel:
+                conn.execute(
+                    '''INSERT INTO geleerde_regels (user_id, sleutel, rekening_id, btw_waarde, auto_boek)
+                       VALUES (?,?,?,?,?)
+                       ON CONFLICT(user_id, sleutel) DO UPDATE SET
+                         rekening_id=excluded.rekening_id,
+                         btw_waarde=excluded.btw_waarde,
+                         auto_boek=excluded.auto_boek''',
+                    (uid(), sleutel, rekening_id, btw_waarde, 1 if auto_boek else 0)
+                )
     return redirect(request.referrer or url_for('transacties'))
 
 
