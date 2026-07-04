@@ -450,9 +450,20 @@ def transacties():
             'geboekt':    conn.execute('SELECT COUNT(*) FROM transacties WHERE user_id=? AND geboekt=1', (uid(),)).fetchone()[0],
         }
 
+        regels = conn.execute(
+            '''SELECT r.zoekterm, r.rekening_id, r.btw_waarde, rek.code, rek.naam
+               FROM regels r JOIN rekeningen rek ON r.rekening_id = rek.id
+               WHERE r.user_id=?''', (uid(),)
+        ).fetchall()
+
+    # Rekeningen en regels als simpele dicts voor gebruik in JavaScript
+    rekeningen_js = [dict(r) for r in rekeningen]
+    regels_js = [dict(r) for r in regels]
+
     return render_template('transacties.html', transacties=rows, rekeningen=rekeningen,
                            filter_mode=filter_mode, kw_filter=kw_filter, all_kw=all_kw,
-                           stats=stats, kwartaal_fn=kwartaal, btw_opties=BTW_OPTIES, btw_label=btw_label)
+                           stats=stats, kwartaal_fn=kwartaal, btw_opties=BTW_OPTIES, btw_label=btw_label,
+                           rekeningen_js=rekeningen_js, regels_js=regels_js)
 
 
 @app.route('/importeer', methods=['POST'])

@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 
+<style>
+  .rij-transactie { cursor: pointer; }
+  .rij-transactie:hover { background: #eef4ff !important; }
+  .rij-open td:nth-child(2) { border-left: 4px solid #ffc107; }
+</style>
+
 <!-- Header + importknop -->
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
@@ -61,11 +67,11 @@
   </div>
 </div>
 
-<!-- Standalone form voor bulk-verwijderen (checkboxes koppelen via form-attribuut) -->
+<!-- Standalone form voor bulk-verwijderen -->
 <form method="post" action="/verwijder-meerdere" id="bulkForm"
       onsubmit="return confirm('Weet je zeker dat je de geselecteerde transacties wilt verwijderen?')"></form>
 
-<!-- Balk voor bulk-acties (verschijnt bij selectie) -->
+<!-- Balk voor bulk-acties -->
 <div id="bulkBar" class="alert alert-primary d-none align-items-center justify-content-between py-2 mb-2">
   <span><i class="bi bi-check2-square me-1"></i><span id="bulkCount">0</span> geselecteerd</span>
   <button type="submit" form="bulkForm" class="btn btn-sm btn-danger">
@@ -83,18 +89,28 @@
             <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleAll(this)" title="Selecteer alles">
           </th>
           <th style="width:100px">Datum</th>
-          <th>Omschrijving</th>
-          <th class="text-end" style="width:110px">Bedrag</th>
-          <th style="width:220px">Grootboek</th>
-          <th style="width:60px">BTW</th>
-          <th style="width:60px">Doc</th>
-          <th style="width:80px"></th>
+          <th>Tegenrekening / Omschrijving</th>
+          <th style="width:220px">Geboekt op</th>
+          <th style="width:60px" class="text-center">Doc</th>
+          <th class="text-end" style="width:120px">Bedrag</th>
+          <th style="width:44px"></th>
         </tr>
       </thead>
       <tbody>
         {% for t in transacties %}
-        <tr class="{% if t.geboekt %}text-muted{% endif %}">
-          <td class="text-center">
+        <tr class="rij-transactie {% if not t.geboekt %}rij-open{% endif %}"
+            data-id="{{ t.id }}"
+            data-datum="{{ t.datum }}"
+            data-bedrag="{{ t.bedrag }}"
+            data-naam="{{ (t.omschrijving or '')|e }}"
+            data-detail="{{ (t.tegenrekening or '')|e }}"
+            data-geboekt="{{ t.geboekt }}"
+            data-rekening="{{ t.rekening_id or '' }}"
+            data-btw="{{ t.btw_waarde or '0' }}"
+            data-notitie="{{ (t.notitie or '')|e }}"
+            data-factuur="{{ t.factuur or '' }}"
+            onclick="openBoek(this)">
+          <td class="text-center" onclick="event.stopPropagation()">
             <input type="checkbox" class="form-check-input rij-check" name="ids" value="{{ t.id }}" form="bulkForm" onchange="updateBulk()">
           </td>
           <td class="small text-nowrap">{{ t.datum }}</td>
@@ -107,95 +123,39 @@
               <div class="text-primary" style="font-size:.72rem"><i class="bi bi-chat-text-fill"></i> {{ t.notitie }}</div>
             {% endif %}
           </td>
-          <td class="text-end text-nowrap">
-            <span class="{{ 'bedrag-bij' if t.bedrag > 0 else 'bedrag-af' }}">
-              € {{ "%.2f"|format(t.bedrag) }}
-            </span>
-          </td>
           <td>
             {% if t.geboekt and t.rek_naam %}
-              <span class="type-{{ t.rek_type }}">{{ t.rek_code }} {{ t.rek_naam }}</span>
+              <div class="fw-semibold small">{{ t.rek_code }} {{ t.rek_naam }}</div>
+              <div class="text-muted" style="font-size:.72rem">{{ btw_label(t.btw_waarde) }}</div>
             {% else %}
-              <span class="text-danger small"><i class="bi bi-exclamation-circle"></i> Niet geboekt</span>
+              <span class="badge rounded-pill" style="background:#f8d7da;color:#58151c">
+                <i class="bi bi-exclamation-circle"></i> Niet geboekt
+              </span>
             {% endif %}
           </td>
-          <td class="text-center">
-            {% if t.btw_waarde and t.btw_waarde != '0' %}
-              <span class="badge bg-secondary">{{ btw_label(t.btw_waarde) }}</span>
-            {% endif %}
-          </td>
-          <td class="text-center">
+          <td class="text-center" onclick="event.stopPropagation()">
             {% if t.factuur %}
-              <a href="/uploads/{{ t.factuur }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Factuur bekijken">
+              <a href="/uploads/{{ t.factuur }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Bestand bekijken">
                 <i class="bi bi-paperclip"></i>
               </a>
             {% endif %}
           </td>
-          <td class="text-end">
-            <button class="btn btn-sm btn-outline-primary py-0 px-2"
-                    onclick="toggleBoek({{ t.id }})" title="Afboeken">
-              <i class="bi bi-pencil-fill"></i>
-            </button>
-            <form method="post" action="/verwijder/{{ t.id }}" style="display:inline"
-                  onsubmit="return confirm('Weet je zeker dat je deze transactie wilt verwijderen?')">
-              <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Verwijderen">
-                <i class="bi bi-trash-fill"></i>
-              </button>
-            </form>
+          <td class="text-end text-nowrap fw-semibold">
+            <span class="{{ 'bedrag-bij' if t.bedrag > 0 else 'bedrag-af' }}">
+              € {{ "%.2f"|format(t.bedrag) }}
+            </span>
           </td>
-        </tr>
-
-        <!-- Boekingsformulier (verborgen) -->
-        <tr id="boek-{{ t.id }}" class="boek-row" style="display:none">
-          <td colspan="8" class="py-2 px-3">
-            <form method="post" action="/boek/{{ t.id }}" enctype="multipart/form-data">
-              <div class="row g-2 align-items-end">
-                <div class="col-md-4">
-                  <label class="form-label small fw-semibold mb-1">Grootboekrekening *</label>
-                  <select name="rekening_id" class="form-select form-select-sm"
-                          id="rek-sel-{{ t.id }}" onchange="autoFillBtw({{ t.id }})">
-                    <option value="">— Kies rekening —</option>
-                    {% for r in rekeningen %}
-                    <option value="{{ r.id }}" data-btw="{{ r.btw_waarde }}"
-                            {% if t.rekening_id == r.id %}selected{% endif %}>
-                      {{ r.code }} {{ r.naam }}
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-2">
-                  <label class="form-label small fw-semibold mb-1">BTW-code</label>
-                  <select name="btw_waarde" class="form-select form-select-sm" id="btw-sel-{{ t.id }}">
-                    {% for v, l in btw_opties %}
-                    <option value="{{ v }}" {% if (t.btw_waarde or '0') == v %}selected{% endif %}>{{ l }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label small fw-semibold mb-1">Factuur / bon uploaden</label>
-                  <input type="file" name="factuur" class="form-control form-control-sm"
-                         accept=".pdf,.jpg,.jpeg,.png,.heic">
-                  {% if t.factuur %}
-                    <div class="small text-success mt-1"><i class="bi bi-check-circle"></i> Al een document aanwezig</div>
-                  {% endif %}
-                </div>
-                <div class="col-md-2">
-                  <label class="form-label small fw-semibold mb-1">Notitie</label>
-                  <input type="text" name="notitie" class="form-control form-control-sm"
-                         value="{{ t.notitie or '' }}" placeholder="Optioneel">
-                </div>
-                <div class="col-md-1">
-                  <button type="submit" class="btn btn-sm btn-success w-100">
-                    <i class="bi bi-check-lg"></i> Sla op
-                  </button>
-                </div>
-              </div>
-            </form>
+          <td class="text-center">
+            {% if t.geboekt %}
+              <i class="bi bi-check-circle-fill text-success" title="Geboekt"></i>
+            {% else %}
+              <i class="bi bi-circle text-secondary" title="Nog niet geboekt"></i>
+            {% endif %}
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="8" class="text-center text-muted py-5">
+          <td colspan="7" class="text-center text-muted py-5">
             <i class="bi bi-inbox fs-1 d-block mb-2"></i>
             Geen transacties gevonden.<br>
             <button class="btn btn-primary btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#importModal">
@@ -206,6 +166,121 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</div>
+
+<!-- ══════════ Boekpaneel (schuift van rechts) ══════════ -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="boekPanel" style="width:520px;max-width:95vw">
+  <div class="offcanvas-body p-0 d-flex flex-column">
+
+    <!-- Sluitknop -->
+    <div class="p-3 pb-0">
+      <button type="button" class="btn btn-light border" data-bs-dismiss="offcanvas">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
+    <!-- Transactie-kop -->
+    <div class="px-3 pt-3">
+      <div class="card border-0 shadow-sm" id="boekKop" style="border-left:5px solid #198754 !important">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="fw-bold fs-5" id="kopDatum">—</div>
+            <div class="fw-bold fs-5" id="kopBedrag">—</div>
+          </div>
+          <div class="mt-1">
+            <span class="fw-bold" id="kopNaam">—</span>
+          </div>
+          <div class="text-muted small mt-1" id="kopDetail"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs px-3 mt-3" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabBoeken" type="button">Boekingen</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBestanden" type="button">Bestanden</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabNotities" type="button">Notities</button></li>
+    </ul>
+
+    <form method="post" id="boekForm" enctype="multipart/form-data" class="flex-grow-1 d-flex flex-column">
+      <div class="tab-content flex-grow-1 overflow-auto px-3 py-3" style="background:#f8f9fa">
+
+        <!-- TAB: Boekingen -->
+        <div class="tab-pane fade show active" id="tabBoeken">
+
+          <!-- Suggestie (verschijnt als een auto-regel matcht) -->
+          <div id="suggestieKaart" class="card border-primary mb-3 d-none">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <div class="fw-bold" id="sugNaam">—</div>
+                  <div class="text-muted small" id="sugBtw">—</div>
+                </div>
+                <span class="badge bg-primary-subtle text-primary"><i class="bi bi-robot me-1"></i>Suggestie</span>
+              </div>
+              <div class="text-muted small mt-2">Deze transactie matcht jouw ingestelde auto-regel:</div>
+              <div class="small mt-1"><i class="bi bi-check text-primary"></i> Omschrijving bevat "<span id="sugTerm"></span>"</div>
+              <button type="button" class="btn btn-primary w-100 mt-3" onclick="accepteerSuggestie()">
+                <i class="bi bi-check-circle me-1"></i> Accepteer deze suggestie
+              </button>
+            </div>
+          </div>
+
+          <label class="form-label fw-semibold">Kies een rubriek (grootboekrekening)</label>
+          <select name="rekening_id" id="boekRekening" class="form-select mb-3" onchange="boekBtwSync()">
+            <option value="">— Kies een rubriek —</option>
+            {% set cats = [('omzet','Omzet'),('kosten','Kosten'),('activa','Activa'),('passiva','Passiva'),('prive','Privé'),('nvt','Overig')] %}
+            {% for key, label in cats %}
+              {% set groep = rekeningen | selectattr('type','equalto',key) | list %}
+              {% if groep %}
+              <optgroup label="{{ label }}">
+                {% for r in groep | sort(attribute='code') %}
+                <option value="{{ r.id }}" data-btw="{{ r.btw_waarde }}">{{ r.code }} – {{ r.naam }}</option>
+                {% endfor %}
+              </optgroup>
+              {% endif %}
+            {% endfor %}
+          </select>
+
+          <label class="form-label fw-semibold">BTW-code</label>
+          <select name="btw_waarde" id="boekBtw" class="form-select mb-3">
+            {% for v, l in btw_opties %}
+            <option value="{{ v }}">{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- TAB: Bestanden -->
+        <div class="tab-pane fade" id="tabBestanden">
+          <label class="form-label fw-semibold">Factuur / bon toevoegen</label>
+          <input type="file" name="factuur" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.heic">
+          <div class="form-text">PDF of foto van de bon/factuur.</div>
+          <div id="huidigBestand" class="mt-3 d-none">
+            <div class="alert alert-success py-2 d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-paperclip me-1"></i> Bestand aanwezig</span>
+              <a id="huidigBestandLink" href="#" target="_blank" class="btn btn-sm btn-outline-success">Bekijken</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Notities -->
+        <div class="tab-pane fade" id="tabNotities">
+          <label class="form-label fw-semibold">Notitie</label>
+          <textarea name="notitie" id="boekNotitie" class="form-control" rows="4" placeholder="Eigen aantekening bij deze transactie…"></textarea>
+        </div>
+
+      </div>
+
+      <!-- Vaste onderbalk -->
+      <div class="p-3 border-top bg-white d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Annuleren</button>
+        <button type="submit" class="btn btn-success px-4">
+          <i class="bi bi-check-lg me-1"></i> Opslaan &amp; afboeken
+        </button>
+      </div>
+    </form>
+
   </div>
 </div>
 
@@ -238,37 +313,99 @@
 
 {% block scripts %}
 <script>
-function toggleBoek(id) {
-  const row = document.getElementById('boek-' + id);
-  row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+const REGELS = {{ regels_js | tojson }};
+const BTW_LABELS = { {% for v, l in btw_opties %}'{{ v }}': "{{ l }}", {% endfor %} };
+let boekOffcanvas = null;
+
+function fmtBedrag(n) {
+  const neg = n < 0;
+  const s = Math.abs(n).toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  return (neg ? '€ -' : '€ ') + s;
 }
 
-function autoFillBtw(id) {
-  const sel = document.getElementById('rek-sel-' + id);
-  const btwSel = document.getElementById('btw-sel-' + id);
+function openBoek(row) {
+  const d = row.dataset;
+
+  // Kop vullen
+  const bedrag = parseFloat(d.bedrag);
+  document.getElementById('kopDatum').textContent = d.datum;
+  const kopBedrag = document.getElementById('kopBedrag');
+  kopBedrag.textContent = fmtBedrag(bedrag);
+  kopBedrag.className = 'fw-bold fs-5 ' + (bedrag >= 0 ? 'text-success' : 'text-danger');
+  document.getElementById('boekKop').style.borderLeftColor = bedrag >= 0 ? '#198754' : '#dc3545';
+  document.getElementById('kopNaam').textContent = d.naam || '—';
+  document.getElementById('kopDetail').textContent = d.detail || '';
+
+  // Formulier target
+  document.getElementById('boekForm').action = '/boek/' + d.id;
+
+  // Bestaande waarden
+  document.getElementById('boekRekening').value = d.rekening || '';
+  document.getElementById('boekBtw').value = d.btw || '0';
+  document.getElementById('boekNotitie').value = d.notitie || '';
+
+  // Huidig bestand
+  const huidig = document.getElementById('huidigBestand');
+  if (d.factuur) {
+    huidig.classList.remove('d-none');
+    document.getElementById('huidigBestandLink').href = '/uploads/' + d.factuur;
+  } else {
+    huidig.classList.add('d-none');
+  }
+
+  // Suggestie zoeken op basis van auto-regels
+  const tekst = ((d.naam || '') + ' ' + (d.detail || '')).toLowerCase();
+  const sug = REGELS.find(r => r.zoekterm && tekst.includes(r.zoekterm.toLowerCase()));
+  const sugKaart = document.getElementById('suggestieKaart');
+  if (sug && !d.rekening) {
+    sugKaart.classList.remove('d-none');
+    document.getElementById('sugNaam').textContent = sug.code + ' – ' + sug.naam;
+    document.getElementById('sugBtw').textContent = BTW_LABELS[sug.btw_waarde] || '';
+    document.getElementById('sugTerm').textContent = sug.zoekterm;
+    sugKaart.dataset.rekening = sug.rekening_id;
+    sugKaart.dataset.btw = sug.btw_waarde;
+  } else {
+    sugKaart.classList.add('d-none');
+  }
+
+  // Altijd op eerste tab starten
+  document.querySelector('#boekPanel .nav-link.active')?.classList.remove('active');
+  document.querySelector('#boekPanel .nav-link').classList.add('active');
+  document.querySelectorAll('#boekPanel .tab-pane').forEach((p,i) => {
+    p.classList.toggle('show', i===0); p.classList.toggle('active', i===0);
+  });
+
+  if (!boekOffcanvas) boekOffcanvas = new bootstrap.Offcanvas(document.getElementById('boekPanel'));
+  boekOffcanvas.show();
+}
+
+function boekBtwSync() {
+  const sel = document.getElementById('boekRekening');
   const opt = sel.options[sel.selectedIndex];
-  if (opt && opt.dataset.btw !== undefined) {
-    btwSel.value = opt.dataset.btw;
+  if (opt && opt.dataset.btw !== undefined && opt.dataset.btw !== '') {
+    document.getElementById('boekBtw').value = opt.dataset.btw;
   }
 }
 
+function accepteerSuggestie() {
+  const k = document.getElementById('suggestieKaart');
+  document.getElementById('boekRekening').value = k.dataset.rekening;
+  document.getElementById('boekBtw').value = k.dataset.btw;
+  k.classList.add('d-none');
+}
+
+// Bulk-selectie
 function toggleAll(box) {
   document.querySelectorAll('.rij-check').forEach(c => c.checked = box.checked);
   updateBulk();
 }
-
 function updateBulk() {
   const checks = document.querySelectorAll('.rij-check');
   const selected = document.querySelectorAll('.rij-check:checked').length;
   document.getElementById('bulkCount').textContent = selected;
   const bar = document.getElementById('bulkBar');
-  if (selected > 0) {
-    bar.classList.remove('d-none');
-    bar.classList.add('d-flex');
-  } else {
-    bar.classList.add('d-none');
-    bar.classList.remove('d-flex');
-  }
+  bar.classList.toggle('d-none', selected === 0);
+  bar.classList.toggle('d-flex', selected > 0);
   const selectAll = document.getElementById('selectAll');
   selectAll.checked = selected > 0 && selected === checks.length;
   selectAll.indeterminate = selected > 0 && selected < checks.length;
